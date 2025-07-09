@@ -3,15 +3,21 @@ import pandas as pd
 import plotly.express as px
 import numpy as np # Import numpy for is_numeric
 
-# Helper function to clean numeric strings (e.g., '3.3k', '1.2M')
+# Helper function to clean numeric strings (e.g., '3.3k', '1.2M', '1.39%')
 def clean_numeric_value(value):
     if pd.isna(value):
         return np.nan # Handle NaN values
-    s = str(value).strip().lower().replace(',', '') # Remove commas, convert to lowercase
+    s = str(value).strip().lower().replace(',', '').replace('%', '') # Remove commas and percentage sign, convert to lowercase
     if 'k' in s:
-        return float(s.replace('k', '')) * 1_000
+        try:
+            return float(s.replace('k', '')) * 1_000
+        except ValueError:
+            return np.nan # Return NaN if conversion fails after removing 'k'
     elif 'm' in s:
-        return float(s.replace('m', '')) * 1_000_000
+        try:
+            return float(s.replace('m', '')) * 1_000_000
+        except ValueError:
+            return np.nan # Return NaN if conversion fails after removing 'm'
     else:
         try:
             return float(s) # Try converting directly to float
@@ -42,12 +48,6 @@ if df is not None:
     # Applying error handling for column existence before type conversion
     required_columns = [
         'rank', 'influence_score', 'posts', 'followers', 'avg_likes',
-        '60_day_eng_rate', 'new_post_avg_avg_likes', 'total_likes', 'country', 'channel_info'
-    ]
-    # Correcting 'new_post_avg_avg_likes' to 'new_post_avg_like' based on previous context.
-    # If your CSV uses 'new_post_avg_avg_likes', adjust the list accordingly.
-    required_columns = [
-        'rank', 'influence_score', 'posts', 'followers', 'avg_likes',
         '60_day_eng_rate', 'new_post_avg_like', 'total_likes', 'country', 'channel_info'
     ]
 
@@ -58,7 +58,8 @@ if df is not None:
         st.stop() # Stop if essential columns are missing
 
     # Apply cleaning function to relevant columns BEFORE type conversion
-    columns_to_clean = ['followers', 'posts', 'avg_likes', 'new_post_avg_like', 'total_likes']
+    # Added '60_day_eng_rate' to the list of columns to clean
+    columns_to_clean = ['followers', 'posts', 'avg_likes', 'new_post_avg_like', 'total_likes', '60_day_eng_rate']
     for col in columns_to_clean:
         if col in df.columns:
             df[col] = df[col].apply(clean_numeric_value)
@@ -79,7 +80,7 @@ if df is not None:
         df['country'] = df['country'].astype(str)
         df['channel_info'] = df['channel_info'].astype(str)
     except Exception as e:
-        st.error(f"Error converting column types after cleaning. This might indicate unexpected data formats: {e}")
+        st.error(f"Error converting column types after cleaning. This might indicate unexpected data formats still present: {e}")
         st.stop() # Stop if type conversion fails after cleaning
 
     # Handle potential nulls introduced by cleaning or initial NaNs by filling with 0 (or median)
@@ -182,7 +183,7 @@ if df is not None:
         avg_engagement_rate=('60_day_eng_rate', 'mean')
     ).reset_index()
 
-    fig_map = px.choropleph(
+    fig_map = px.choropleth(
         country_summary,
         locations="country",
         locationmode="country names",
