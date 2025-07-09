@@ -1,7 +1,7 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
-import numpy as np # Import numpy for is_numeric
+import numpy as np # Import numpy for np.nan
 
 # Helper function to clean numeric strings (e.g., '3.3k', '1.2M', '1.39%')
 def clean_numeric_value(value):
@@ -44,8 +44,6 @@ else:
 # --- All subsequent code that relies on 'df' must be inside this block ---
 if df is not None:
     # --- 2. Data Preprocessing and Calculated Fields ---
-    # Ensure data types are correct (as per your document)
-    # Applying error handling for column existence before type conversion
     required_columns = [
         'rank', 'influence_score', 'posts', 'followers', 'avg_likes',
         '60_day_eng_rate', 'new_post_avg_like', 'total_likes', 'country', 'channel_info'
@@ -57,18 +55,26 @@ if df is not None:
         st.error(f"Missing required columns in the uploaded CSV: {', '.join(missing_columns)}. Please check your file.")
         st.stop() # Stop if essential columns are missing
 
-    # Apply cleaning function to relevant columns BEFORE type conversion
-    # Added '60_day_eng_rate' to the list of columns to clean
-    columns_to_clean = ['followers', 'posts', 'avg_likes', 'new_post_avg_like', 'total_likes', '60_day_eng_rate']
+    # Apply cleaning function to relevant columns
+    columns_to_clean = ['rank', 'followers', 'posts', 'avg_likes', 'new_post_avg_like', 'total_likes', '60_day_eng_rate', 'influence_score'] # Added 'rank' and 'influence_score' as they might also contain non-numeric string values
     for col in columns_to_clean:
         if col in df.columns:
             df[col] = df[col].apply(clean_numeric_value)
         else:
             st.warning(f"Column '{col}' not found for cleaning. Skipping.")
 
+    # --- Crucial Correction: Fill NaNs BEFORE final type conversion for integer columns ---
+    # Fill all numerical NaNs with 0. You might choose another strategy (e.g., median) if appropriate for your analysis.
+    numeric_columns = ['rank', 'influence_score', 'posts', 'followers', 'avg_likes',
+                       '60_day_eng_rate', 'new_post_avg_like', 'total_likes']
+    for col in numeric_columns:
+        if col in df.columns and df[col].isnull().any():
+            df[col] = df[col].fillna(0) # Fill NaN with 0 for numeric columns
 
     # Type conversions
     try:
+        # Convert to float first for all numeric columns to handle decimal places potentially introduced by 'k'/'m' cleaning
+        # Then convert to int for columns that should strictly be integers
         df['rank'] = df['rank'].astype(int)
         df['influence_score'] = df['influence_score'].astype(float)
         df['posts'] = df['posts'].astype(int)
@@ -77,36 +83,27 @@ if df is not None:
         df['60_day_eng_rate'] = df['60_day_eng_rate'].astype(float)
         df['new_post_avg_like'] = df['new_post_avg_like'].astype(float)
         df['total_likes'] = df['total_likes'].astype(int)
+
         df['country'] = df['country'].astype(str)
         df['channel_info'] = df['channel_info'].astype(str)
     except Exception as e:
-        st.error(f"Error converting column types after cleaning. This might indicate unexpected data formats still present: {e}")
-        st.stop() # Stop if type conversion fails after cleaning
-
-    # Handle potential nulls introduced by cleaning or initial NaNs by filling with 0 (or median)
-    for col in ['influence_score', 'posts', 'followers', 'avg_likes',
-                '60_day_eng_rate', 'new_post_avg_like', 'total_likes']:
-        if df[col].isnull().any():
-            df[col] = df[col].fillna(0) # or df[col].fillna(df[col].median())
+        st.error(f"Final error converting column types. This might indicate persistent non-numeric data or other issues: {e}")
+        st.stop() # Stop if type conversion fails
 
     # Calculated Fields (from your provided document)
-    # Engagement Rate (ER) Calculation: ((avg_likes) / (followers]) * 100
-    # Add a check to prevent division by zero for followers
+    # Ensure no division by zero for calculated fields
     df['Engagement Rate (Calculated)'] = df.apply(
         lambda row: (row['avg_likes'] / row['followers']) * 100 if row['followers'] != 0 else 0,
         axis=1
     )
-    # Growth Rate in New Post Likes: ([new_post_avg_like] - [avg_likes]) / [avg_likes] * 100
     df['Growth Rate in New Post Likes'] = df.apply(
         lambda row: ((row['new_post_avg_like'] - row['avg_likes']) / row['avg_likes']) * 100 if row['avg_likes'] != 0 else 0,
         axis=1
     )
-    # Like-to-Follower Ratio: [total_likes) / (followers]
     df['Like-to-Follower Ratio'] = df.apply(
         lambda row: row['total_likes'] / row['followers'] if row['followers'] != 0 else 0,
         axis=1
     )
-    # Post Efficiency: [total_likes] / [posts]
     df['Post Efficiency'] = df.apply(
         lambda row: row['total_likes'] / row['posts'] if row['posts'] != 0 else 0,
         axis=1
