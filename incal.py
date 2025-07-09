@@ -6,7 +6,7 @@ import plotly.express as px
 st.sidebar.header("Upload Your Data")
 uploaded_file = st.sidebar.file_uploader("Choose a CSV file", type="csv")
 
-df = None # Initialize df as None
+df = None # Initialize df as None outside the conditional block
 
 if uploaded_file is not None:
     try:
@@ -14,11 +14,12 @@ if uploaded_file is not None:
         st.sidebar.success("File uploaded successfully!")
     except Exception as e:
         st.sidebar.error(f"Error reading file: {e}. Please ensure it's a valid CSV.")
+        # If there's an error, df remains None, and the rest of the app won't run.
 else:
-    st.info("Please upload a CSV file to proceed.")
-    st.stop() # Stop execution if no file is uploaded
+    st.info("Please upload a CSV file to proceed with the dashboard.")
+    st.stop() # Stop execution here if no file is uploaded yet
 
-# Proceed only if DataFrame is loaded
+# --- All subsequent code that relies on 'df' must be inside this block ---
 if df is not None:
     # --- 2. Data Preprocessing and Calculated Fields ---
     # Ensure data types are correct (as per your document)
@@ -31,35 +32,52 @@ if df is not None:
 
     if missing_columns:
         st.error(f"Missing required columns in the uploaded CSV: {', '.join(missing_columns)}. Please check your file.")
-        st.stop()
+        st.stop() # Stop if essential columns are missing
 
-    df['rank'] = df['rank'].astype(int) [cite: 29]
-    df['influence_score'] = df['influence_score'].astype(float) [cite: 29]
-    df['posts'] = df['posts'].astype(int) [cite: 29]
-    df['followers'] = df['followers'].astype(int) [cite: 29]
-    df['avg_likes'] = df['avg_likes'].astype(float) [cite: 29]
-    df['60_day_eng_rate'] = df['60_day_eng_rate'].astype(float) [cite: 29]
-    df['new_post_avg_like'] = df['new_post_avg_like'].astype(float) [cite: 29]
-    df['total_likes'] = df['total_likes'].astype(int) [cite: 30]
-    df['country'] = df['country'].astype(str) [cite: 31]
-    df['channel_info'] = df['channel_info'].astype(str) [cite: 29]
+    # Type conversions
+    try:
+        df['rank'] = df['rank'].astype(int)
+        df['influence_score'] = df['influence_score'].astype(float)
+        df['posts'] = df['posts'].astype(int)
+        df['followers'] = df['followers'].astype(int)
+        df['avg_likes'] = df['avg_likes'].astype(float)
+        df['60_day_eng_rate'] = df['60_day_eng_rate'].astype(float)
+        df['new_post_avg_like'] = df['new_post_avg_like'].astype(float)
+        df['total_likes'] = df['total_likes'].astype(int)
+        df['country'] = df['country'].astype(str)
+        df['channel_info'] = df['channel_info'].astype(str)
+    except Exception as e:
+        st.error(f"Error converting column types. Please check data consistency: {e}")
+        st.stop() # Stop if type conversion fails
 
     # Handle potential nulls (example: fill numerical NaNs with 0, or median for robust analysis)
-    # You might want to refine this based on your specific data and needs.
     for col in ['influence_score', 'posts', 'followers', 'avg_likes',
                 '60_day_eng_rate', 'new_post_avg_like', 'total_likes']:
         if df[col].isnull().any():
-            df[col] = df[col].fillna(0) # or df[col].fillna(df[col].median()) [cite: 119, 120]
+            df[col] = df[col].fillna(0) # or df[col].fillna(df[col].median())
 
     # Calculated Fields (from your provided document)
-    # Engagement Rate (ER) Calculation: ((avg_likes) / (followers]) * 100 [cite: 45, 46]
-    df['Engagement Rate (Calculated)'] = (df['avg_likes'] / df['followers']) * 100
-    # Growth Rate in New Post Likes: ([new_post_avg_like] - [avg_likes]) / [avg_likes] * 100 [cite: 49, 50]
-    df['Growth Rate in New Post Likes'] = ((df['new_post_avg_like'] - df['avg_likes']) / df['avg_likes']) * 100
-    # Like-to-Follower Ratio: [total_likes) / (followers] [cite: 53]
-    df['Like-to-Follower Ratio'] = df['total_likes'] / df['followers']
-    # Post Efficiency: [total_likes] / [posts] [cite: 297]
-    df['Post Efficiency'] = df['total_likes'] / df['posts']
+    # Engagement Rate (ER) Calculation: ((avg_likes) / (followers]) * 100
+    # Add a check to prevent division by zero for followers
+    df['Engagement Rate (Calculated)'] = df.apply(
+        lambda row: (row['avg_likes'] / row['followers']) * 100 if row['followers'] != 0 else 0,
+        axis=1
+    )
+    # Growth Rate in New Post Likes: ([new_post_avg_like] - [avg_likes]) / [avg_likes] * 100
+    df['Growth Rate in New Post Likes'] = df.apply(
+        lambda row: ((row['new_post_avg_like'] - row['avg_likes']) / row['avg_likes']) * 100 if row['avg_likes'] != 0 else 0,
+        axis=1
+    )
+    # Like-to-Follower Ratio: [total_likes) / (followers]
+    df['Like-to-Follower Ratio'] = df.apply(
+        lambda row: row['total_likes'] / row['followers'] if row['followers'] != 0 else 0,
+        axis=1
+    )
+    # Post Efficiency: [total_likes] / [posts]
+    df['Post Efficiency'] = df.apply(
+        lambda row: row['total_likes'] / row['posts'] if row['posts'] != 0 else 0,
+        axis=1
+    )
 
 
     # --- 3. Streamlit App Layout ---
@@ -69,7 +87,7 @@ if df is not None:
     st.markdown("---")
 
     # Sidebar for filters and navigation
-    st.sidebar.header("Dashboard Controls")
+    st.sidebar.subheader("Data Filters")
     selected_country = st.sidebar.multiselect(
         "Filter by Country:",
         options=df['country'].unique(),
@@ -79,10 +97,10 @@ if df is not None:
     # Filter dataframe based on selected country
     filtered_df = df[df['country'].isin(selected_country)]
 
-    # Check if filtered_df is empty
+    # Check if filtered_df is empty after applying filters
     if filtered_df.empty:
-        st.warning("No data available for the selected country/countries. Please adjust your filters.")
-        st.stop()
+        st.warning("No data available for the selected country/countries. Please adjust your filters or upload a different dataset.")
+        st.stop() # Stop if no data matches filters
 
 
     # --- 4. Dashboard 1: Overview of Influencer Performance ---
@@ -91,25 +109,25 @@ if df is not None:
     col1, col2, col3, col4 = st.columns(4)
 
     with col1:
-        total_influencers = len(filtered_df) [cite: 181, 182]
+        total_influencers = len(filtered_df)
         st.metric(label="Total Influencers", value=f"{total_influencers:,}")
 
     with col2:
-        avg_engagement_rate = filtered_df['60_day_eng_rate'].mean() [cite: 187, 188]
+        avg_engagement_rate = filtered_df['60_day_eng_rate'].mean()
         st.metric(label="Average Engagement Rate (60-Day)", value=f"{avg_engagement_rate:.2f}%")
 
     with col3:
-        total_followers = filtered_df['followers'].sum() [cite: 185, 186]
+        total_followers = filtered_df['followers'].sum()
         st.metric(label="Total Followers Across Influencers", value=f"{total_followers:,}")
 
     with col4:
-        avg_likes_per_post = filtered_df['avg_likes'].mean() [cite: 191, 192]
+        avg_likes_per_post = filtered_df['avg_likes'].mean()
         st.metric(label="Average Likes per Post", value=f"{avg_likes_per_post:,.0f}")
 
     st.markdown("---")
 
     # Top 10 Influencers by Influence Score
-    st.subheader("Top 10 Influencers by Influence Score") [cite: 60, 61]
+    st.subheader("Top 10 Influencers by Influence Score")
     top_10_influencers = filtered_df.sort_values(by='influence_score', ascending=False).head(10)
     fig_top_influencers = px.bar(
         top_10_influencers,
@@ -124,7 +142,7 @@ if df is not None:
 
     st.markdown("---")
 
-    # Geographic Distribution of Influencers by Country (Map Visualization) [cite: 72, 73]
+    # Geographic Distribution of Influencers by Country (Map Visualization)
     st.subheader("Geographic Distribution of Influencers by Country")
     # Aggregate data for map: count of influencers and average engagement rate per country
     country_summary = filtered_df.groupby('country').agg(
@@ -150,7 +168,7 @@ if df is not None:
     # --- 5. Dashboard 2: Engagement and Influence Metrics ---
     st.header("📈 Engagement and Influence Metrics")
 
-    # Followers vs. Avg Likes with Influence Score as size [cite: 75]
+    # Followers vs. Avg Likes with Influence Score as size
     st.subheader("Followers vs. Average Likes (Size by Influence Score)")
     fig_scatter = px.scatter(
         filtered_df,
@@ -167,7 +185,7 @@ if df is not None:
 
     st.markdown("---")
 
-    # Engagement Rate Distribution (Histogram) [cite: 58]
+    # Engagement Rate Distribution (Histogram)
     st.subheader("60-Day Engagement Rate Distribution")
     fig_eng_hist = px.histogram(
         filtered_df,
@@ -184,7 +202,7 @@ if df is not None:
     # --- 6. Dashboard 3: Country-Specific Insights ---
     st.header("🌍 Country-Specific Insights")
 
-    # Total Influencers and Average Influence Score per Country [cite: 78]
+    # Total Influencers and Average Influence Score per Country
     country_influence_summary = filtered_df.groupby('country').agg(
         total_influencers=('channel_info', 'count'),
         avg_influence_score=('influence_score', 'mean')
@@ -203,7 +221,7 @@ if df is not None:
 
     st.markdown("---")
 
-    # Bubble Chart: Like-to-Follower Ratio by Country [cite: 79, 80]
+    # Bubble Chart: Like-to-Follower Ratio by Country
     # Aggregate for bubble chart if needed, or use influencer level data
     fig_bubble = px.scatter(
         filtered_df,
@@ -223,7 +241,7 @@ if df is not None:
     # --- 7. Dashboard 4: Engagement Trends ---
     st.header("📊 Engagement Trends")
 
-    # Heatmap: 60_day_eng_rate by Influencer Rank and Country (simplified for demo) [cite: 82]
+    # Heatmap: 60_day_eng_rate by Influencer Rank and Country (simplified for demo)
     # For a full heatmap, you might need to pivot or reshape your data if you have multiple entries per rank/country
     # For this example, let's show average engagement rate per country, which is more practical for a heatmap-like view
     engagement_pivot = filtered_df.pivot_table(index='country', values='60_day_eng_rate', aggfunc='mean')
@@ -243,5 +261,5 @@ if df is not None:
     st.sidebar.info(
         "This dashboard visualizes data of top Instagram influencers, providing insights into their performance, "
         "engagement, and geographical distribution. "
-        "Data from 'Top Instagram Influencers Data (Cleaned) Dashboard (Business Analyst).pdf'." [cite: 1]
+        "Please upload your 'top_insta_influencers_data.csv' file to use the dashboard."
     )
