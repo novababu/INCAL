@@ -1,6 +1,22 @@
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+import numpy as np # Import numpy for is_numeric
+
+# Helper function to clean numeric strings (e.g., '3.3k', '1.2M')
+def clean_numeric_value(value):
+    if pd.isna(value):
+        return np.nan # Handle NaN values
+    s = str(value).strip().lower().replace(',', '') # Remove commas, convert to lowercase
+    if 'k' in s:
+        return float(s.replace('k', '')) * 1_000
+    elif 'm' in s:
+        return float(s.replace('m', '')) * 1_000_000
+    else:
+        try:
+            return float(s) # Try converting directly to float
+        except ValueError:
+            return np.nan # Return NaN if conversion fails (e.g., garbage string)
 
 # --- 1. Load Data ---
 st.sidebar.header("Upload Your Data")
@@ -14,7 +30,7 @@ if uploaded_file is not None:
         st.sidebar.success("File uploaded successfully!")
     except Exception as e:
         st.sidebar.error(f"Error reading file: {e}. Please ensure it's a valid CSV.")
-        # If there's an error, df remains None, and the rest of the app won't run.
+        st.stop() # Stop execution if file cannot be read
 else:
     st.info("Please upload a CSV file to proceed with the dashboard.")
     st.stop() # Stop execution here if no file is uploaded yet
@@ -26,13 +42,29 @@ if df is not None:
     # Applying error handling for column existence before type conversion
     required_columns = [
         'rank', 'influence_score', 'posts', 'followers', 'avg_likes',
+        '60_day_eng_rate', 'new_post_avg_avg_likes', 'total_likes', 'country', 'channel_info'
+    ]
+    # Correcting 'new_post_avg_avg_likes' to 'new_post_avg_like' based on previous context.
+    # If your CSV uses 'new_post_avg_avg_likes', adjust the list accordingly.
+    required_columns = [
+        'rank', 'influence_score', 'posts', 'followers', 'avg_likes',
         '60_day_eng_rate', 'new_post_avg_like', 'total_likes', 'country', 'channel_info'
     ]
+
     missing_columns = [col for col in required_columns if col not in df.columns]
 
     if missing_columns:
         st.error(f"Missing required columns in the uploaded CSV: {', '.join(missing_columns)}. Please check your file.")
         st.stop() # Stop if essential columns are missing
+
+    # Apply cleaning function to relevant columns BEFORE type conversion
+    columns_to_clean = ['followers', 'posts', 'avg_likes', 'new_post_avg_like', 'total_likes']
+    for col in columns_to_clean:
+        if col in df.columns:
+            df[col] = df[col].apply(clean_numeric_value)
+        else:
+            st.warning(f"Column '{col}' not found for cleaning. Skipping.")
+
 
     # Type conversions
     try:
@@ -47,10 +79,10 @@ if df is not None:
         df['country'] = df['country'].astype(str)
         df['channel_info'] = df['channel_info'].astype(str)
     except Exception as e:
-        st.error(f"Error converting column types. Please check data consistency: {e}")
-        st.stop() # Stop if type conversion fails
+        st.error(f"Error converting column types after cleaning. This might indicate unexpected data formats: {e}")
+        st.stop() # Stop if type conversion fails after cleaning
 
-    # Handle potential nulls (example: fill numerical NaNs with 0, or median for robust analysis)
+    # Handle potential nulls introduced by cleaning or initial NaNs by filling with 0 (or median)
     for col in ['influence_score', 'posts', 'followers', 'avg_likes',
                 '60_day_eng_rate', 'new_post_avg_like', 'total_likes']:
         if df[col].isnull().any():
@@ -150,7 +182,7 @@ if df is not None:
         avg_engagement_rate=('60_day_eng_rate', 'mean')
     ).reset_index()
 
-    fig_map = px.choropleth(
+    fig_map = px.choropleph(
         country_summary,
         locations="country",
         locationmode="country names",
